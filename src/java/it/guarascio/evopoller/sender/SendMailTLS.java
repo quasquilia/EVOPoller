@@ -1,4 +1,4 @@
-package it.guarascio.evopoller.mailsender;
+package it.guarascio.evopoller.sender;
 
  
 import it.guarascio.evopoller.utils.Logger;
@@ -13,15 +13,19 @@ import javax.mail.Transport;
 import javax.mail.internet.InternetAddress;
 import javax.mail.internet.MimeMessage;
  
-public class SendMailTLS {
+class SendMailTLS implements MessageSender {
 	
 	private final MailBean mail;
  
-	public SendMailTLS(MailBean mail) {
+	SendMailTLS(MailBean mail) {
 		super();
 		this.mail = mail;
 	}
 
+	/* (non-Javadoc)
+	 * @see it.guarascio.evopoller.mailsender.MessageSender#send(java.lang.String, java.lang.String, boolean)
+	 */
+	@Override
 	public void send(String subject, String body, boolean html) {
  
 		Properties props = new Properties();

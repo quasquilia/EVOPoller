@@ -1,4 +1,4 @@
-package it.guarascio.evopoller.mailsender;
+package it.guarascio.evopoller.sender;
 
 public class MailBean {
 	private String sender;

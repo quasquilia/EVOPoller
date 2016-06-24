@@ -1,14 +1,5 @@
 package it.guarascio.evopoller;
 
-import it.guarascio.evopoller.EVOTaskData.QueueBeanElement;
-import it.guarascio.evopoller.evorequests.RequestFactory;
-import it.guarascio.evopoller.mailsender.MailBean;
-import it.guarascio.evopoller.mailsender.SendMailTLS;
-import it.guarascio.evopoller.publishers.IEVOBeanPublisher;
-import it.guarascio.evopoller.scheduler.IScheduledTask;
-import it.guarascio.evopoller.utils.DateUtils;
-import it.guarascio.evopoller.utils.Logger;
-
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
 import java.io.File;
@@ -16,21 +7,27 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.InvalidClassException;
 import java.io.ObjectInput;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutput;
 import java.io.ObjectOutputStream;
 import java.io.OutputStream;
-import java.security.acl.LastOwnerException;
-import java.sql.Savepoint;
 import java.text.DateFormat;
 import java.text.DecimalFormat;
 import java.text.SimpleDateFormat;
-import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Date;
-import java.util.List;
+
+import it.guarascio.evopoller.EVOTaskData.QueueBeanElement;
+import it.guarascio.evopoller.evorequests.RequestFactory;
+import it.guarascio.evopoller.publishers.IEVOBeanPublisher;
+import it.guarascio.evopoller.scheduler.IScheduledTask;
+import it.guarascio.evopoller.sender.MessageSender;
+import it.guarascio.evopoller.sender.MessageSenderFactory;
+import it.guarascio.evopoller.statisticspublisher.Statistics;
+import it.guarascio.evopoller.statisticspublisher.StatisticsSenderFactory;
+import it.guarascio.evopoller.utils.DateUtils;
+import it.guarascio.evopoller.utils.Logger;
 
 public class EVOTask implements IScheduledTask {
 
@@ -41,9 +38,15 @@ public class EVOTask implements IScheduledTask {
 	private EVOTaskData residualData = null;
 	private IEVOBeanPublisher publisher;
 	
-	private MailBean mail = null;
-	
+	private final MessageSenderFactory messageSenderFactory;
+	private final StatisticsSenderFactory statisticsSenderFactory;
 	private DateFormat dateFormat = new SimpleDateFormat("yyyy/MM/dd HH:mm:ss");
+	
+	public EVOTask(MessageSenderFactory messageSenderFactory, StatisticsSenderFactory statisticsSenderFactory) {
+		this.messageSenderFactory = messageSenderFactory;
+		this.statisticsSenderFactory = statisticsSenderFactory;
+	}
+	
 	
 	private void reset() {
 		residualData = null;
@@ -59,9 +62,7 @@ public class EVOTask implements IScheduledTask {
 		if (dailyData.firstBean == null && bean != null && bean.getPower() > THRESHOLD_POWER) {
 			dailyData.powerPeakBean = dailyData.lastBean = dailyData.lastPowerBean = dailyData.firstBean = bean;
 			processResidualData();
-			if (mail != null) {
-				sendGoodMorningMail();
-			}
+			sendGoodMorningMail();
 		}
 			
 		// Se sono partito ...
@@ -75,7 +76,7 @@ public class EVOTask implements IScheduledTask {
 				dailyData.zeroCount++;
 				if (dailyData.zeroCount == ZERO_WAIT_NUM) {
 					
-					if (mail != null && dailyData.powerPeakBean != null && dailyData.lastBean != null && dailyData.firstBean != null) {
+					if (dailyData.powerPeakBean != null && dailyData.lastBean != null && dailyData.firstBean != null) {
 						sendGoodNightMail();
 					}
 					
@@ -164,47 +165,52 @@ public class EVOTask implements IScheduledTask {
 	public void setPublisher(IEVOBeanPublisher publisher) {
 		this.publisher = publisher;
 	}
-
-	public MailBean getMail() {
-		return mail;
-	}
-
-	public void setMail(MailBean mail) {
-		this.mail = mail;
-	}
 	
 	private void sendGoodMorningMail() {
-		SendMailTLS mailSender = new SendMailTLS(mail);
-		mailSender.send("Good morning!", "L'inverter si e'avviato", false);
+		MessageSender mailSender = messageSenderFactory.createSender();
+		mailSender.send("Good morning!", "L'inverter si e'avviato alle " + new Date(), false);
 	}
 
 	private void sendGoodNightMail() {
-		SendMailTLS mailSender = new SendMailTLS(mail);
-		double dailyEnergy = dailyData.lastBean.getEnergy() - dailyData.firstBean.getEnergy();
-		String energy = new DecimalFormat("#.00").format(dailyEnergy) + " KWh";
 		
-		Date diff = new Date(dailyData.lastPowerBean.getDate().getTime() - dailyData.firstBean.getDate().getTime());
+		Date diff = new Date(dailyData.lastPowerBean.getDate().getTime() - dailyData.firstBean.getDate().getTime());		
+		
+		Statistics statistics = new Statistics();
+		statistics.dailyEnergy = dailyData.lastBean.getEnergy() - dailyData.firstBean.getEnergy();
+		statistics.avgPower = statistics.dailyEnergy*1000/(diff.getTime()/(1000*3600));
+		statistics.peakPower = dailyData.powerPeakBean.getPower();
+		statistics.workingTime = diff;
+		statistics.peakHour = dailyData.powerPeakBean.getDate();
+		
+		sendStatisticsMail(statistics);
+		statisticsSenderFactory.createSender().send(statistics);
+	}
+
+
+	private void sendStatisticsMail(Statistics statistics) {
+		MessageSender mailSender = messageSenderFactory.createSender();
+		String energy = new DecimalFormat("#.00").format(statistics.dailyEnergy) + " KWh";
 		SimpleDateFormat output = new SimpleDateFormat("HH:mm:ss");
-		String workingTime = output.format(diff);
+		String workingTime = output.format(statistics.workingTime);
+		
 		
 		Calendar calendar = Calendar.getInstance();
-		calendar.setTime(diff);
+		calendar.setTime(statistics.workingTime);
 		int hours = calendar.get(Calendar.HOUR_OF_DAY);
 		int minutes = calendar.get(Calendar.MINUTE);
-		int seconds = calendar.get(Calendar.SECOND);
-		double avgPower = dailyEnergy*1000/(diff.getTime()/(1000*3600));
-		String sAvgPower = new DecimalFormat("#.00").format(avgPower) + " W";
-		String sPeakPower = new DecimalFormat("#.00").format(dailyData.powerPeakBean.getPower()) + " W";
-		String sPeakHour = output.format(dailyData.powerPeakBean.getDate());
+		int seconds = calendar.get(Calendar.SECOND);		
+		String sAvgPower = new DecimalFormat("#.00").format(statistics.avgPower) + " W";
+		
+		String sPeakPower = new DecimalFormat("#.00").format(statistics.peakPower) + " W";
+		String sPeakHour = output.format(statistics.peakHour);
 		mailSender.send("Good night!",
-				 "L'inverter si e'spento\n\n" +
+				 "L'inverter si e'spento alle " + new Date() + "\n\n" +
 				 "Energia generata: " + energy + "\n" +
 				 "Ore di funzionamento: " + workingTime + "\n" +
 				 "Potenza media: " + sAvgPower + "\n" + 
 				 "Potenza di picco: " + sPeakPower + " raggiunta alle " + sPeakHour + "."  + "\n\n" + 
 				 dailyData.printMeteoStats(),
 				 false);
-		
 	}
 	
 	private void writeTaskData() {

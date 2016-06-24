@@ -1,6 +1,7 @@
 package it.guarascio.evopoller.publishers;
 
 import it.guarascio.evopoller.EVOBean;
+import it.guarascio.evopoller.http.HttpClientProvider;
 import it.guarascio.evopoller.pvoutput.HttpSender;
 import it.guarascio.evopoller.pvoutput.ResponseData;
 import it.guarascio.evopoller.pvoutput.StatusCode;
@@ -20,13 +21,15 @@ class PVPublisher implements IEVOBeanPublisher {
 	private DateFormat dfSimple = new SimpleDateFormat("yyyyMMdd");
 	private DecimalFormat df = new DecimalFormat( "#.0", DecimalFormatSymbols.getInstance(Locale.ENGLISH)); 
 	private Properties p = new Properties();
+	private final HttpClientProvider httpClientProvider;
 
 	public static String MODE = "PV";
 	
 	private boolean dry = false;
 	
-	public PVPublisher(boolean dry) throws Exception {
+	public PVPublisher(HttpClientProvider httpClientProvider, boolean dry) throws Exception {
 		this.dry = dry;
+		this.httpClientProvider = httpClientProvider;
 	}
 	
 	public void processData(Date date, int power, double energy, double temp, String weather) throws Exception {				
@@ -60,7 +63,8 @@ class PVPublisher implements IEVOBeanPublisher {
 		Logger.info(s.replace(';', '\n'));
 		if (!dry) {
 			Logger.info("effective call:");
-			HttpSender sender = new HttpSender("http://pvoutput.org/service/r2/addoutput.jsp", "155e88bb273495c0b00c0d59cb3fdc7c2a78e4e7", "20405");			
+			HttpSender sender = new HttpSender(httpClientProvider,
+					"http://pvoutput.org/service/r2/addoutput.jsp", "155e88bb273495c0b00c0d59cb3fdc7c2a78e4e7", "20405");			
 			ResponseData response = sender.sendbatch(s);
 			if (response == null || !StatusCode.SUCCESS.equals(response.status)) {
 				throw new RuntimeException("Error sending data to PVOutput. Error:" 
