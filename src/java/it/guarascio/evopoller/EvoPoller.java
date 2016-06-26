@@ -187,7 +187,8 @@ public class EvoPoller {
 		Logger.info("Usage:" +
 				"\nevopoller hh:mm pollIntervalMin \"url\"\n\t" + 
 				"[-auth username password]\n\t" + 
-				"[-mail recipients sender smtpserver [smtpuser] [smtppassword]]\n\t" + 
+				"[-mail recipients sender smtpserver [smtpuser] [smtppassword]]\n\t" +
+				"[-iftt iftt_key]\n\t" +  
 				"[-publish pv|syso|composite]\n\t" +
 				"[-meteo wunderground|yahoo"); 
 	}
