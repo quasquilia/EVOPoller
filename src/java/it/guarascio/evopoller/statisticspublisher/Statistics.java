@@ -10,5 +10,5 @@ public class Statistics {
 	public double avgPower;
 	public double peakPower;
 	public Date peakHour;
-	public final Map<String, Double> meteoStats = new LinkedHashMap<>();
+	public final Map<String, Double> meteoStats = new LinkedHashMap<String, Double>();
 }
